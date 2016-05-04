@@ -8,20 +8,19 @@ import socket
 
 import pymongo
 
-
 def mongo_password():
     """Fetch passsword for MongoDB
 
     This is stored in an environmental variable MONGO_PASSWORD.
     """
-    mongo_pwd = os.environ.get('MONGO_PASSWORD')
-    if mongo_pwd is None:
+    mongo_password = os.environ.get('MONGO_PASSWORD')
+    if mongo_password is None:
         raise EnvironmentError('Environmental variable MONGO_PASSWORD not set.'
                                ' This is required for communicating with the '
                                'run database.  To fix this problem, Do:'
                                '\n\n\texport MONGO_PASSWORD=xxx\n\n'
                                'Then rerun this command.')
-    return mongo_pwd
+    return mongo_password
 
 
 def get_hostname():
@@ -30,50 +29,54 @@ def get_hostname():
     return socket.gethostname().split('.')[0]
 
 
-def get_config(hostname):
-    """Returns the cax configuration for a particular hostname
-    NB this currently reloads the cax.json file every time it is called!!
-    """
+def load():
     dirname = os.path.dirname(os.path.abspath(__file__))
     filename = os.path.join(dirname, 'cax.json')
-    config = json.loads(open(filename, 'r').read())
+    logging.debug('loading %s' % filename)
+    return json.loads(open(filename, 'r').read())
 
-    for doc in config:
-        if doc['name'] == hostname:
+
+def get_config(name):
+    for doc in load():
+        if doc['name'] == name:
             return doc
-    raise LookupError("Unknown host %s" % hostname)
+    raise LookupError("Unknown host %s" % name)
 
 
-def get_transfer_options(transfer_kind='upload', transfer_method=None):
-    """Returns hostnames that the current host can upload or download to.
-    transfer_kind: 'upload' or 'download'
-    transfer_method: is specified and not None, return only hosts with which
-                     we can work using this method (e.g. scp)
-    """
+def get_options(option_type='upload', method=None):
+    if method is None:
+        try:
+            options = get_config(get_hostname())['%s_options' % option_type]
+        except LookupError as e:
+            logging.info("Unknown config host: %s", get_hostname())
+            return []
+
+        return options
+
+    options = []
+
+    for x in get_options(option_type,
+                         None):
+        if get_config(x)['receive'] == method:
+            options.append(x)
+
+    return options
+
+
+def get_pax_options(option_type='versions'):
     try:
-        transfer_options = get_config(get_hostname())['%s_options' % transfer_kind]
-    except LookupError:
-        logging.info("Host %s has no known transfer options.")
+        options = get_config(get_hostname())['pax_%s' % option_type] 
+    except LookupError as e:
+        logging.info("Unknown config host: %s", get_hostname())
         return []
 
-    if transfer_method is not None:
-        transfer_options = [to for to in transfer_options
-                            if get_config(to['host'])['receive'] == 'method']
-
-    return transfer_options
+    return options
 
 
 def mongo_collection():
-    # For the event builder to communicate with the gateway, we need to use the DAQ network address
-    # Otherwise, use the internet to find the runs database
-    if get_hostname().startswith('eb'):
-        c = pymongo.MongoClient('mongodb://eb:%s@gw:27017/run' % os.environ.get('MONGO_PASSWORD'))
-    else:
-        uri = 'mongodb://eb:%s@xenon1t-daq.lngs.infn.it:27017,copslx50.fysik.su.se:27017/run'
-        uri = uri % os.environ.get('MONGO_PASSWORD')
-        c = pymongo.MongoClient(uri,
-                                replicaSet='runs',
-                                read_preference=pymongo.ReadPreference.PRIMARY_PREFERRED)
+    c = pymongo.MongoClient('mongodb://eb:%s@xenon1t-daq.lngs.infn.it:27017,copslx50.fysik.su.se:27017/run' % os.environ.get('MONGO_PASSWORD'),
+        replicaSet='runs',
+        read_preference=pymongo.ReadPreference.PRIMARY_PREFERRED)
     db = c['run']
     collection = db['runs_new']
     return collection

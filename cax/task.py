@@ -3,7 +3,6 @@ from cax import config
 from bson.json_util import dumps
 from json import loads
 
-
 class Task():
     def __init__(self):
         # Grab the Run DB so we can query it
@@ -12,18 +11,22 @@ class Task():
         self.run_doc = None
         self.raw_data = None
 
-    def go(self):
-        """Run this periodically"""
 
+    def go(self, processat):
+        """Run this periodically"""
+        print(processat)
         for self.run_doc in self.collection.find({'detector': 'tpc'}):
+            
             if 'data' not in self.run_doc:
                 continue
 
             self.raw_data = self.get_daq_buffer()
-
-            self.each_run()
+            
+            self.each_run(processat)
+            
 
     def each_run(self):
+        print('test')
         for data_doc in self.run_doc['data']:
             self.log.debug('%s on %s' % (self.__class__.__name__,
                                          self.run_doc['number']))
